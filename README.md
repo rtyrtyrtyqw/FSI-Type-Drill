@@ -1,5 +1,7 @@
 # FSI Local AI Type-Drill
 
+[English Version](./README_en.md)
+
 **為鍵盤工作者與外語學習者設計的「本地 AI 句型肌肉記憶」鍛鍊軟體**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
