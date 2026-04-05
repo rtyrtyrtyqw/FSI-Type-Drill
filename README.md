@@ -1,12 +1,12 @@
 # FSI Type-Drill: Local AI Language Learning Tool
 
-**FSI Type-Drill** 是一款結合了 **FSI (Foreign Service Institute) 語言教學法** 與 **本地 LLM (DeepSeek-R1)** 的高效英語肌肉記憶練習工具。
+**FSI Type-Drill** 是一款結合了 **FSI (Foreign Service Institute) 語言教學法** 與 **本地 LLM** 的高效英語肌肉記憶練習工具。
 
 透過「高頻句型替換練習 (Substitution Drills)」，本工具能幫助學習者在不需要雲端 API 的情況下，透過打字與即時語音回饋，建立直覺性的語法反應。
 
 ## ✨ 核心功能
 
-- **DeepSeek-R1 驅動**：利用本地最強推論模型，自動生成 10 組具備邏輯性的句型變體。
+- **本地模型驅動**：利用本地最強推論模型，自動生成 10 組具備邏輯性的句型變體。
 - **三大難度梯度**：
   - **Simple**: 基礎單字替換。
   - **Morphology**: 隨機變換人稱與時態，強迫大腦注意語法細節。
