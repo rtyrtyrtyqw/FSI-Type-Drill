@@ -11,7 +11,7 @@
 
 > **注意：** 由於本專案需連接你本地運行的 Ollama 服務，請確保已按照 [快速部署](#-快速部署) 步驟啟動服務。
 
-- **GitHub Pages:** [[你的 GitHub Pages 連結]](https://rtyrtyrtyqw.github.io/FSI-Type-Drill/)
+- **GitHub Pages:** https://rtyrtyrtyqw.github.io/FSI-Type-Drill/
 - **本地訪問:** 直接下載 `index.html` 並在瀏覽器打開。
 
 ---
