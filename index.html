@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FSI 肌肉記憶練習器 - 全功能進階版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        .cursor-active { border-bottom: 3px solid #3b82f6; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+        .char-correct { color: #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+        .char-wrong { color: #ef4444; background: #fee2e2; border-radius: 4px; }
+        .font-mono { font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; }
+        .char-box { min-width: 0.6em; display: inline-block; text-align: center; margin: 0 3px; }
+        .level-btn { transition: all 0.2s; border: 1px solid #374151; }
+        .level-btn.active { background-color: #3b82f6; border-color: #3b82f6; color: white; box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
+        .recommend-card { transition: all 0.2s ease; cursor: pointer; border: 1px solid #374151; }
+        .recommend-card:hover { transform: translateY(-2px); border-color: #3b82f6; background-color: #1e293b; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
+
+<div id="app" class="w-full max-w-5xl">
+    <div v-if="!isStarted" class="bg-gray-800 p-8 rounded-2xl shadow-2xl border border-gray-700 space-y-8">
+        <div class="flex justify-between items-center">
+            <h1 class="text-3xl font-bold text-blue-400">🧠 FSI 專業強化系統</h1>
+            <div class="flex items-center gap-4 text-xs text-gray-500">
+                <span>🔊 語音已就緒</span>
+                <button @click="clearHistory" class="hover:text-red-400 underline">清空紀錄</button>
+            </div>
+        </div>
+
+        <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-700">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest text-blue-300">💡 DeepSeek 每日推薦 (基於目前難度)</h2>
+                <button @click="fetchRecommendations" :disabled="loadingRec" class="text-xs text-blue-500 hover:text-blue-400 transition">
+                    {{ loadingRec ? '生成中...' : '🔄 換一批推薦' }}
+                </button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div v-for="rec in recommendations" :key="rec.pattern" @click="baseSentence = rec.pattern"
+                     class="recommend-card p-4 rounded-lg bg-gray-800 shadow-sm">
+                    <div class="text-[10px] text-blue-500 font-bold mb-1 uppercase tracking-tighter">{{ rec.tag }}</div>
+                    <div class="text-sm font-mono mb-2 line-clamp-2 h-10">{{ rec.pattern }}</div>
+                    <div class="text-[11px] text-gray-500">{{ rec.note }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <label class="block text-sm font-semibold text-gray-400 uppercase tracking-widest">選擇練習梯度 (Drill Level)</label>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button v-for="(desc, lv) in levels" :key="lv" @click="currentLevel = lv"
+                        :class="['level-btn p-4 rounded-xl text-left', currentLevel === lv ? 'active' : 'bg-gray-900/30 hover:bg-gray-700']">
+                    <div class="font-bold mb-1">{{ lv }}</div>
+                    <div class="text-xs opacity-70">{{ desc }}</div>
+                </button>
+            </div>
+        </div>
+
+        <div class="space-y-4 border-t border-gray-700 pt-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                    <label class="block text-gray-500 mb-1 ml-1">練習核心句型</label>
+                    <input v-model="baseSentence" @keyup.enter="generateSentences" placeholder="例如: I have [noun] in my room." class="w-full p-3 bg-gray-900 rounded-lg border border-gray-700 outline-none focus:border-blue-500 transition">
+                </div>
+                <div>
+                    <label class="block text-gray-500 mb-1 ml-1">模型名稱 (Local)</label>
+                    <input v-model="modelName" class="w-full p-3 bg-gray-900 rounded-lg border border-gray-800 outline-none">
+                </div>
+            </div>
+            <button @click="generateSentences" :disabled="loading" 
+                    class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 py-4 rounded-xl font-bold text-xl transition shadow-lg active:scale-95">
+                {{ loading ? 'DeepSeek 正在生成題目與錄製語音...' : '🚀 開始肌肉記憶練習' }}
+            </button>
+        </div>
+    </div>
+
+    <div v-else class="text-center">
+        <div class="mb-10 flex justify-between items-center text-gray-400">
+            <div class="flex items-center gap-4">
+                <span class="text-xl font-bold text-blue-400">Lv: {{ currentLevel }}</span>
+                <span class="px-3 py-1 bg-gray-800 rounded text-sm">{{ currentIndex + 1 }} / {{ sentences.length }}</span>
+            </div>
+            <button @click="reset" class="hover:text-red-400 underline text-sm transition">退出練習</button>
+        </div>
+        
+        <div class="bg-gray-800/40 p-12 md:p-24 rounded-3xl border border-gray-700 mb-10 shadow-2xl">
+            <div class="text-4xl md:text-6xl font-mono leading-relaxed flex flex-wrap justify-center items-center tracking-tight">
+                <span v-for="(char, index) in currentSentence" :key="index" 
+                      :class="[getCharClass(index), char === ' ' ? 'mx-3' : '']"
+                      class="char-box">
+                    {{ char === ' ' ? '&nbsp;' : char }}
+                </span>
+                <span v-if="userInput.length === currentSentence.length" class="char-box cursor-active">&nbsp;</span>
+            </div>
+            <div class="text-2xl text-gray-500 mt-16 font-sans italic opacity-70">{{ currentTranslation }}</div>
+        </div>
+        <div class="text-gray-600 text-sm italic tracking-widest animate-pulse">
+            🔊 聽聲音，打出你聽到的句子
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
+
+createApp({
+    setup() {
+        const apiUrl = ref('http://127.0.0.1:11434/api/generate');
+        const modelName = ref('deepseek-r1:8b');
+        const baseSentence = ref('It is essential to [verb] every day.');
+        const isStarted = ref(false);
+        const loading = ref(false);
+        const loadingRec = ref(false);
+        const sentences = ref([]);
+        const currentIndex = ref(0);
+        const userInput = ref("");
+        const history = ref([]);
+        const recommendations = ref([
+            { tag: "對話", pattern: "How about we [action] together?", note: "日常邀約常用" },
+            { tag: "演講", pattern: "I am here today to [topic].", note: "正式簡報開頭" },
+            { tag: "觀點", pattern: "It seems to me that [fact].", note: "委婉表達立場" }
+        ]);
+
+        const currentLevel = ref('Simple');
+        const levels = {
+            'Simple': '簡單替換：只更換括號內容。',
+            'Morphology': '語法變換：隨機變換人稱或時態。',
+            'Transformation': '轉型練習：轉為否定或疑問句。'
+        };
+
+        const currentSentence = computed(() => sentences.value[currentIndex.value]?.en || "");
+        const currentTranslation = computed(() => sentences.value[currentIndex.value]?.tw || "");
+
+        function speak(text) {
+            window.speechSynthesis.cancel();
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'en-US';
+            utter.rate = 0.9;
+            window.speechSynthesis.speak(utter);
+        }
+
+        // AI 推薦句型生成 (補回核心邏輯)
+        async function fetchRecommendations() {
+            loadingRec.value = true;
+            const prompt = `請隨機生成 3 個適合 "${currentLevel.value}" 難度的英文句型。每個句型必須包含 [ ]。
+            輸出格式請嚴格遵守 JSON 陣列：[{"tag": "類別", "pattern": "句型", "note": "用法說明"}]`;
+            try {
+                const response = await fetch(apiUrl.value, {
+                    method: 'POST',
+                    body: JSON.stringify({ model: modelName.value, prompt, stream: false })
+                });
+                const data = await response.json();
+                let raw = data.response.replace(/<think>[\s\S]*?<\/think>/g, "");
+                const s = raw.indexOf('['); const e = raw.lastIndexOf(']');
+                recommendations.value = JSON.parse(raw.substring(s, e + 1));
+            } catch (e) { console.error("推薦載入失敗"); }
+            finally { loadingRec.value = false; }
+        }
+
+        async function generateSentences() {
+            if (!baseSentence.value) return;
+            loading.value = true;
+            const prompt = `Task: Create 10 sentences for "${baseSentence.value}". 
+            Level: ${currentLevel.value}. ${currentLevel.value === 'Morphology' ? 'Change Tense/Subject.' : ''}
+            Output: JSON array ONLY: [{"en": "...", "tw": "..."}]`;
+
+            try {
+                const response = await fetch(apiUrl.value, {
+                    method: 'POST',
+                    body: JSON.stringify({ model: modelName.value, prompt, stream: false })
+                });
+                const data = await response.json();
+                let raw = data.response.replace(/<think>[\s\S]*?<\/think>/g, "");
+                const s = raw.indexOf('['); const e = raw.lastIndexOf(']');
+                sentences.value = JSON.parse(raw.substring(s, e + 1));
+                
+                isStarted.value = true;
+                currentIndex.value = 0;
+                userInput.value = "";
+                speak(sentences.value[0].en);
+                
+                // 存入紀錄
+                history.value.push({ pattern: baseSentence.value, date: Date.now() });
+                localStorage.setItem('fsi_history', JSON.stringify(history.value));
+            } catch (e) { alert("生成失敗，請再試一次。"); }
+            finally { loading.value = false; }
+        }
+
+        function getCharClass(index) {
+            if (index < userInput.value.length) {
+                return userInput.value[index] === currentSentence.value[index] ? 'char-correct' : 'char-wrong';
+            }
+            return index === userInput.value.length ? 'cursor-active' : '';
+        }
+
+        function handleKeyDown(e) {
+            if (!isStarted.value || loading.value) return;
+            if (e.key === 'Backspace') { userInput.value = userInput.value.slice(0, -1); return; }
+            if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key === ' ') e.preventDefault();
+            if (userInput.value.length < currentSentence.value.length) userInput.value += e.key;
+
+            if (userInput.value === currentSentence.value) {
+                speak(currentSentence.value);
+                setTimeout(() => {
+                    if (currentIndex.value < sentences.value.length - 1) {
+                        currentIndex.value++;
+                        userInput.value = "";
+                        speak(currentSentence.value); // 切換後朗讀新題目
+                    } else { alert("🎉 練習完成！"); reset(); }
+                }, 200);
+            }
+        }
+
+        function reset() { isStarted.value = false; sentences.value = []; userInput.value = ""; window.speechSynthesis.cancel(); }
+        function clearHistory() { if(confirm("清除紀錄？")) { history.value = []; localStorage.removeItem('fsi_history'); }}
+
+        onMounted(() => {
+            window.addEventListener('keydown', handleKeyDown);
+            const saved = localStorage.getItem('fsi_history');
+            if (saved) history.value = JSON.parse(saved);
+        });
+        
+        return { 
+            apiUrl, modelName, baseSentence, isStarted, loading, loadingRec, sentences, 
+            currentIndex, userInput, currentSentence, currentTranslation, 
+            levels, currentLevel, history, recommendations, 
+            generateSentences, getCharClass, reset, fetchRecommendations, clearHistory
+        };
+    }
+}).mount('#app');
+</script>
+</body>
+</html>
