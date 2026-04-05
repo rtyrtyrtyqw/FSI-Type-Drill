@@ -1,5 +1,7 @@
 # FSI Local AI Type-Drill
 
+[繁體中文](./README.md)
+
 **A high-performance "Language Muscle Memory" trainer for keyboard workers and language learners, powered by Local LLMs.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
