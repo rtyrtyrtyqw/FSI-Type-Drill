@@ -1,7 +1,3 @@
-這是為你的 **FSI Local AI Type-Drill** 專案量身打造的 `README.md`。我參考了 **Qwerty Learner** 的結構，包含了設計思想、功能列表、快速啟動以及針對本地模型優化的特別說明。
-
----
-
 # FSI Local AI Type-Drill
 
 **為鍵盤工作者與外語學習者設計的「本地 AI 句型肌肉記憶」鍛鍊軟體**
