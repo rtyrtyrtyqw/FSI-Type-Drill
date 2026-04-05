@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FSI 肌肉記憶練習器 - 全功能進階版</title>
+    <title>FSI Local AI Type-Drill</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
@@ -15,8 +15,6 @@
         .char-box { min-width: 0.6em; display: inline-block; text-align: center; margin: 0 3px; }
         .level-btn { transition: all 0.2s; border: 1px solid #374151; }
         .level-btn.active { background-color: #3b82f6; border-color: #3b82f6; color: white; box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
-        .recommend-card { transition: all 0.2s ease; cursor: pointer; border: 1px solid #374151; }
-        .recommend-card:hover { transform: translateY(-2px); border-color: #3b82f6; background-color: #1e293b; }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
@@ -24,82 +22,82 @@
 <div id="app" class="w-full max-w-5xl">
     <div v-if="!isStarted" class="bg-gray-800 p-8 rounded-2xl shadow-2xl border border-gray-700 space-y-8">
         <div class="flex justify-between items-center">
-            <h1 class="text-3xl font-bold text-blue-400">🧠 FSI 專業強化系統</h1>
+            <h1 class="text-3xl font-bold text-blue-400">🧠 FSI Local AI System</h1>
             <div class="flex items-center gap-4 text-xs text-gray-500">
-                <span>🔊 語音已就緒</span>
-                <button @click="clearHistory" class="hover:text-red-400 underline">清空紀錄</button>
+                <span :class="apiStatus ? 'text-green-500' : 'text-red-500'">● Ollama: {{ apiStatus ? 'Online' : 'Offline' }}</span>
+                <button @click="clearHistory" class="hover:text-red-400 underline">Clear Data</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-gray-400 uppercase">Select Local Model</label>
+                <div class="flex gap-2">
+                    <select v-model="modelName" class="flex-1 p-3 bg-gray-900 rounded-lg border border-gray-700 outline-none focus:border-blue-500 transition cursor-pointer">
+                        <option v-for="m in availableModels" :key="m.name" :value="m.name">{{ m.name }} ({{ (m.size / 1e9).toFixed(1) }}GB)</option>
+                        <option value="custom">-- Manual Input --</option>
+                    </select>
+                    <input v-if="modelName === 'custom'" v-model="customModelName" placeholder="Enter model name" class="flex-1 p-3 bg-gray-900 rounded-lg border border-gray-700 outline-none">
+                    <button @click="fetchModels" class="p-3 bg-gray-700 rounded-lg hover:bg-gray-600">🔄</button>
+                </div>
+            </div>
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-gray-400 uppercase">Drill Level</label>
+                <div class="flex gap-2">
+                    <button v-for="(desc, lv) in levels" :key="lv" @click="currentLevel = lv"
+                            :class="['flex-1 p-2 rounded-lg text-xs transition border border-gray-700', currentLevel === lv ? 'active bg-blue-600 text-white' : 'bg-gray-900/30']">
+                        {{ lv }}
+                    </button>
+                </div>
             </div>
         </div>
 
         <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-700">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest text-blue-300">💡 DeepSeek 每日推薦 (基於目前難度)</h2>
-                <button @click="fetchRecommendations" :disabled="loadingRec" class="text-xs text-blue-500 hover:text-blue-400 transition">
-                    {{ loadingRec ? '生成中...' : '🔄 換一批推薦' }}
+                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest text-blue-300">💡 Daily Recommendations</h2>
+                <button @click="fetchRecommendations" :disabled="loadingRec || !apiStatus" class="text-xs text-blue-500 hover:text-blue-400">
+                    {{ loadingRec ? 'Thinking...' : 'Refresh' }}
                 </button>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div v-for="rec in recommendations" :key="rec.pattern" @click="baseSentence = rec.pattern"
-                     class="recommend-card p-4 rounded-lg bg-gray-800 shadow-sm">
-                    <div class="text-[10px] text-blue-500 font-bold mb-1 uppercase tracking-tighter">{{ rec.tag }}</div>
+                     class="p-4 rounded-lg bg-gray-800 border border-gray-700 cursor-pointer hover:border-blue-500 transition">
+                    <div class="text-[10px] text-blue-500 font-bold mb-1 uppercase">{{ rec.tag }}</div>
                     <div class="text-sm font-mono mb-2 line-clamp-2 h-10">{{ rec.pattern }}</div>
-                    <div class="text-[11px] text-gray-500">{{ rec.note }}</div>
+                    <div class="text-[11px] text-gray-500 italic">{{ rec.note }}</div>
                 </div>
-            </div>
-        </div>
-
-        <div class="space-y-4">
-            <label class="block text-sm font-semibold text-gray-400 uppercase tracking-widest">選擇練習梯度 (Drill Level)</label>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <button v-for="(desc, lv) in levels" :key="lv" @click="currentLevel = lv"
-                        :class="['level-btn p-4 rounded-xl text-left', currentLevel === lv ? 'active' : 'bg-gray-900/30 hover:bg-gray-700']">
-                    <div class="font-bold mb-1">{{ lv }}</div>
-                    <div class="text-xs opacity-70">{{ desc }}</div>
-                </button>
             </div>
         </div>
 
         <div class="space-y-4 border-t border-gray-700 pt-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                    <label class="block text-gray-500 mb-1 ml-1">練習核心句型</label>
-                    <input v-model="baseSentence" @keyup.enter="generateSentences" placeholder="例如: I have [noun] in my room." class="w-full p-3 bg-gray-900 rounded-lg border border-gray-700 outline-none focus:border-blue-500 transition">
-                </div>
-                <div>
-                    <label class="block text-gray-500 mb-1 ml-1">模型名稱 (Local)</label>
-                    <input v-model="modelName" class="w-full p-3 bg-gray-900 rounded-lg border border-gray-800 outline-none">
-                </div>
-            </div>
-            <button @click="generateSentences" :disabled="loading" 
-                    class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 py-4 rounded-xl font-bold text-xl transition shadow-lg active:scale-95">
-                {{ loading ? 'DeepSeek 正在生成題目與錄製語音...' : '🚀 開始肌肉記憶練習' }}
+            <label class="block text-sm text-gray-400 ml-1">Practice Pattern (use [ ] for blanks)</label>
+            <input v-model="baseSentence" @keyup.enter="generateSentences" placeholder="e.g., I love [activity] in my free time." class="w-full p-4 bg-gray-900 rounded-xl border border-gray-700 outline-none focus:border-blue-500 transition text-lg">
+            <button @click="generateSentences" :disabled="loading || !apiStatus" 
+                    class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 py-5 rounded-2xl font-bold text-2xl transition shadow-xl active:scale-95">
+                {{ loading ? 'Generating Drills...' : 'Start Training' }}
             </button>
         </div>
     </div>
 
-    <div v-else class="text-center">
-        <div class="mb-10 flex justify-between items-center text-gray-400">
-            <div class="flex items-center gap-4">
-                <span class="text-xl font-bold text-blue-400">Lv: {{ currentLevel }}</span>
-                <span class="px-3 py-1 bg-gray-800 rounded text-sm">{{ currentIndex + 1 }} / {{ sentences.length }}</span>
+    <div v-else class="text-center animate-in">
+        <div class="mb-10 flex justify-between items-center text-gray-400 px-4">
+            <div class="flex items-center gap-6">
+                <span class="text-2xl font-black text-blue-400 tracking-tighter">{{ currentIndex + 1 }} / {{ sentences.length }}</span>
+                <span class="text-xs bg-gray-800 px-3 py-1 rounded text-gray-500">{{ activeModel }} @ {{ currentLevel }}</span>
             </div>
-            <button @click="reset" class="hover:text-red-400 underline text-sm transition">退出練習</button>
+            <button @click="reset" class="hover:text-red-400 underline text-sm">Exit Session</button>
         </div>
         
-        <div class="bg-gray-800/40 p-12 md:p-24 rounded-3xl border border-gray-700 mb-10 shadow-2xl">
+        <div class="bg-gray-800/40 p-12 md:p-24 rounded-[3rem] border border-gray-700 mb-10 shadow-inner relative overflow-hidden">
             <div class="text-4xl md:text-6xl font-mono leading-relaxed flex flex-wrap justify-center items-center tracking-tight">
                 <span v-for="(char, index) in currentSentence" :key="index" 
                       :class="[getCharClass(index), char === ' ' ? 'mx-3' : '']"
-                      class="char-box">
-                    {{ char === ' ' ? '&nbsp;' : char }}
-                </span>
+                      class="char-box">{{ char === ' ' ? '&nbsp;' : char }}</span>
                 <span v-if="userInput.length === currentSentence.length" class="char-box cursor-active">&nbsp;</span>
             </div>
             <div class="text-2xl text-gray-500 mt-16 font-sans italic opacity-70">{{ currentTranslation }}</div>
         </div>
-        <div class="text-gray-600 text-sm italic tracking-widest animate-pulse">
-            🔊 聽聲音，打出你聽到的句子
-        </div>
+        <div class="text-gray-600 text-sm italic animate-pulse">🔊 Listen to the audio and type accurately</div>
     </div>
 </div>
 
@@ -108,9 +106,13 @@ const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
 
 createApp({
     setup() {
-        const apiUrl = ref('http://127.0.0.1:11434/api/generate');
-        const modelName = ref('deepseek-r1:8b');
-        const baseSentence = ref('It is essential to [verb] every day.');
+        const apiUrl = ref('http://127.0.0.1:11434');
+        const modelName = ref('');
+        const customModelName = ref('');
+        const availableModels = ref([]);
+        const apiStatus = ref(false);
+        const baseSentence = ref('I usually [activity] after work.');
+        
         const isStarted = ref(false);
         const loading = ref(false);
         const loadingRec = ref(false);
@@ -118,19 +120,11 @@ createApp({
         const currentIndex = ref(0);
         const userInput = ref("");
         const history = ref([]);
-        const recommendations = ref([
-            { tag: "對話", pattern: "How about we [action] together?", note: "日常邀約常用" },
-            { tag: "演講", pattern: "I am here today to [topic].", note: "正式簡報開頭" },
-            { tag: "觀點", pattern: "It seems to me that [fact].", note: "委婉表達立場" }
-        ]);
 
         const currentLevel = ref('Simple');
-        const levels = {
-            'Simple': '簡單替換：只更換括號內容。',
-            'Morphology': '語法變換：隨機變換人稱或時態。',
-            'Transformation': '轉型練習：轉為否定或疑問句。'
-        };
+        const levels = { 'Simple': 'Substitution', 'Morphology': 'Grammar', 'Transformation': 'Syntax' };
 
+        const activeModel = computed(() => modelName.value === 'custom' ? customModelName.value : modelName.value);
         const currentSentence = computed(() => sentences.value[currentIndex.value]?.en || "");
         const currentTranslation = computed(() => sentences.value[currentIndex.value]?.tw || "");
 
@@ -142,37 +136,50 @@ createApp({
             window.speechSynthesis.speak(utter);
         }
 
-        // AI 推薦句型生成 (補回核心邏輯)
-        async function fetchRecommendations() {
-            loadingRec.value = true;
-            const prompt = `請隨機生成 3 個適合 "${currentLevel.value}" 難度的英文句型。每個句型必須包含 [ ]。
-            輸出格式請嚴格遵守 JSON 陣列：[{"tag": "類別", "pattern": "句型", "note": "用法說明"}]`;
+        // 自動獲取 Ollama 已安裝的模型
+        async function fetchModels() {
             try {
-                const response = await fetch(apiUrl.value, {
+                const res = await fetch(`${apiUrl.value}/api/tags`);
+                const data = await res.json();
+                availableModels.value = data.models || [];
+                apiStatus.value = true;
+                if (availableModels.value.length > 0 && !modelName.value) {
+                    modelName.value = availableModels.value[0].name;
+                }
+            } catch (e) {
+                apiStatus.value = false;
+                console.error("Ollama not found");
+            }
+        }
+
+        async function fetchRecommendations() {
+            if (!apiStatus.value) return;
+            loadingRec.value = true;
+            const prompt = `Generate 3 English sentence patterns for language learning (level: ${currentLevel.value}). Use [ ] for gaps. Format: JSON array [{"tag": "Category", "pattern": "Text", "note": "Usage"}]`;
+            try {
+                const res = await fetch(`${apiUrl.value}/api/generate`, {
                     method: 'POST',
-                    body: JSON.stringify({ model: modelName.value, prompt, stream: false })
+                    body: JSON.stringify({ model: activeModel.value, prompt, stream: false })
                 });
-                const data = await response.json();
+                const data = await res.json();
                 let raw = data.response.replace(/<think>[\s\S]*?<\/think>/g, "");
                 const s = raw.indexOf('['); const e = raw.lastIndexOf(']');
                 recommendations.value = JSON.parse(raw.substring(s, e + 1));
-            } catch (e) { console.error("推薦載入失敗"); }
+            } catch (e) { console.error("Rec failed"); }
             finally { loadingRec.value = false; }
         }
 
         async function generateSentences() {
-            if (!baseSentence.value) return;
+            if (!baseSentence.value || !activeModel.value) return;
             loading.value = true;
-            const prompt = `Task: Create 10 sentences for "${baseSentence.value}". 
-            Level: ${currentLevel.value}. ${currentLevel.value === 'Morphology' ? 'Change Tense/Subject.' : ''}
-            Output: JSON array ONLY: [{"en": "...", "tw": "..."}]`;
+            const prompt = `Task: Create 10 drills based on "${baseSentence.value}" (Level: ${currentLevel.value}). Output JSON: [{"en": "...", "tw": "..."}]`;
 
             try {
-                const response = await fetch(apiUrl.value, {
+                const res = await fetch(`${apiUrl.value}/api/generate`, {
                     method: 'POST',
-                    body: JSON.stringify({ model: modelName.value, prompt, stream: false })
+                    body: JSON.stringify({ model: activeModel.value, prompt, stream: false })
                 });
-                const data = await response.json();
+                const data = await res.json();
                 let raw = data.response.replace(/<think>[\s\S]*?<\/think>/g, "");
                 const s = raw.indexOf('['); const e = raw.lastIndexOf(']');
                 sentences.value = JSON.parse(raw.substring(s, e + 1));
@@ -180,12 +187,9 @@ createApp({
                 isStarted.value = true;
                 currentIndex.value = 0;
                 userInput.value = "";
-                speak(sentences.value[0].en);
-                
-                // 存入紀錄
-                history.value.push({ pattern: baseSentence.value, date: Date.now() });
-                localStorage.setItem('fsi_history', JSON.stringify(history.value));
-            } catch (e) { alert("生成失敗，請再試一次。"); }
+                speak(currentSentence.value);
+                saveHistory();
+            } catch (e) { alert("Generation failed. Check your local model name."); }
             finally { loading.value = false; }
         }
 
@@ -209,26 +213,35 @@ createApp({
                     if (currentIndex.value < sentences.value.length - 1) {
                         currentIndex.value++;
                         userInput.value = "";
-                        speak(currentSentence.value); // 切換後朗讀新題目
-                    } else { alert("🎉 練習完成！"); reset(); }
-                }, 200);
+                        speak(currentSentence.value);
+                    } else { alert("Practice Complete!"); reset(); }
+                }, 250);
             }
         }
 
         function reset() { isStarted.value = false; sentences.value = []; userInput.value = ""; window.speechSynthesis.cancel(); }
-        function clearHistory() { if(confirm("清除紀錄？")) { history.value = []; localStorage.removeItem('fsi_history'); }}
+        function saveHistory() {
+            const entry = { pattern: baseSentence.value, date: Date.now() };
+            history.value.push(entry);
+            localStorage.setItem('fsi_history', JSON.stringify(history.value));
+        }
 
         onMounted(() => {
             window.addEventListener('keydown', handleKeyDown);
+            fetchModels();
             const saved = localStorage.getItem('fsi_history');
             if (saved) history.value = JSON.parse(saved);
         });
-        
+
         return { 
-            apiUrl, modelName, baseSentence, isStarted, loading, loadingRec, sentences, 
-            currentIndex, userInput, currentSentence, currentTranslation, 
-            levels, currentLevel, history, recommendations, 
-            generateSentences, getCharClass, reset, fetchRecommendations, clearHistory
+            apiUrl, modelName, customModelName, availableModels, apiStatus, baseSentence, 
+            isStarted, loading, loadingRec, sentences, currentIndex, userInput, 
+            currentSentence, currentTranslation, levels, currentLevel, activeModel,
+            generateSentences, getCharClass, reset, fetchRecommendations, fetchModels,
+            recommendations: ref([
+                { tag: "Conversation", pattern: "I was wondering if I could [verb].", note: "Polite request" },
+                { tag: "Work", pattern: "We need to focus on [topic] this week.", note: "Meeting focus" }
+            ])
         };
     }
 }).mount('#app');
