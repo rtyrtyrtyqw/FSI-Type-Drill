@@ -22,7 +22,7 @@
 
 ## 設計思想
 
-本軟體的靈感來自於 **Qwerty Learner**，並結合了美國外語協會 **FSI (Foreign Service Institute) 語言教學法** 的核心思想。
+本軟體的靈感來自於 **Qwerty Learner**，並結合了美國外交學院 **FSI (Foreign Service Institute) 語言教學法** 的核心思想。
 
 對於鍵盤工作者來說，英語輸入的肌肉記憶往往弱於母語，容易出現語法轉換遲鈍的現象。傳統教學偏重視覺記憶，而忽視了**語言生成的肌肉記憶**。
 
