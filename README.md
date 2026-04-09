@@ -8,7 +8,7 @@
 ---
 
 <p align="center">
-  <a href="./docs/README_en.md">English</a>
+  <a href="README_en.md">English</a>
 </p>
 
 ## 在線訪問
