@@ -1,103 +1,91 @@
-# FSI Local AI Type-Drill
+# FSI Local AI Type-Drill (Closed-loop)
 
-[繁體中文](README.md)
-
-**A high-performance "Language Muscle Memory" trainer for keyboard workers and language learners, powered by Local LLMs.**
+**Designed for keyboard workers and language learners**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Ollama](https://img.shields.io/badge/Ollama-Local--AI-orange)](https://ollama.com/)
 
 ---
 
-## 📸 Demo & Access
+## Online Access
 
-> **Note:** Since this project connects to your local Ollama service, ensure you have followed the [Quick Start](#-quick-start) steps to enable the service.
+> **Note:** Since this project connects to your locally running Ollama service, please ensure the service is started according to the [Quick Deployment](#-quick-deployment) steps.
 
-- **GitHub Pages:** [Your GitHub Pages Link]
-- **Local Access:** Simply download `index.html` and open it in your browser.
+- **GitHub Pages:** [https://rtyrtyrtyqw.github.io/FSI-Type-Drill/](https://rtyrtyrtyqw.github.io/FSI-Type-Drill/)
+- **Local Access:** Download `index.html` and open it directly in your browser.
 
 ---
 
-## ✨ Design Philosophy
+## Design Philosophy
 
-Inspired by **Qwerty Learner** and rooted in the **FSI (Foreign Service Institute) Substitution Drill** methodology.
+The inspiration for this software comes from **Qwerty Learner**, combined with the core concepts of the **FSI (Foreign Service Institute) Language Teaching Method**.
 
-For professionals who use English as a secondary working language, typing fluency often lags behind their native tongue. This results in "mental blocks" or grammatical hesitation during real-time communication. Traditional apps focus on visual recognition, but **FSI Type-Drill** focuses on **Motor Memory**.
+For keyboard workers, muscle memory for English input is often weaker than that of their native language, leading to sluggishness during grammatical transitions. Traditional teaching emphasizes visual memory while neglecting the **muscle memory of language generation**.
 
 **Core Logic of FSI Type-Drill:**
-- **Substitution Drills:** Leveraging Local LLMs (e.g., DeepSeek-R1) to generate real-time sentence variations. By practicing the same grammatical structure with different vocabulary, you turn grammar rules into a physical instinct.
-- **Audio-Visual-Tactile Integration:** Built-in Text-to-Speech (TTS) reinforces learning by syncing sound, meaning, and finger movement.
-- **100% Privacy:** Powered by **Ollama**, ensuring your practice data and personal patterns stay entirely on your machine. No cloud, no tracking.
+- **Substitution Drills:** Generates varied sentences via local models, allowing you to repeat input within the same grammatical structure until the grammar becomes intuitive.
+- **Closed-loop Reinforcement:** When the model detects a grammatical error, it automatically generates personalized exercises targeting that weakness for immediate correction.
+- **Integrated Listening & Typing (TTS):** Built-in pronunciation functionality.
+- **100% Localized:** Runs on Ollama to ensure all learning data and privacy remain entirely on your local machine.
 
 ---
 
-## 🛠 Feature List
+## 🛠 Features
 
-- [x] **Model Autodetect:** Automatically detects your local Ollama models for seamless switching.
-- [x] **Three Difficulty Tiers:**
-  - **Simple:** Basic vocabulary substitution.
-  - **Morphology:** Randomly changes subjects (I/He/They) or tenses to fix common grammar slips.
-  - **Transformation:** Practice converting statements into questions or negatives on the fly.
-- [x] **AI Recommendations:** Generates 3 daily patterns (Speech/Conversation/Business) based on your level.
-- [x] **Instant TTS Feedback:** Uses Web Speech API for high-quality, offline pronunciation.
-- [x] **Progress Tracking:** Locally saved history to quantify your improvement over time.
+- [x] **Model Adaptation:** Automatically detects the list of installed models in your local Ollama and allows one-click switching.
+- [x] **Three Training Levels:**
+    * **Simple (Substitution):** Basic substitution to expand vocabulary and improve typing feel.
+    * **Morphology (Grammar):** Changes subjects and tenses to correct common verb conjugation errors.
+    * **Transformation (Syntax):** Practices logical transitions between affirmative, negative, and interrogative sentences.
+- [x] **Weakness Analysis Dashboard:** Tracks error rates across five major categories: Tense, Word Order, Prepositions, Articles, and Vocabulary.
+- [x] **Error Tracking Log:** Visually displays a "Diff" comparison between the original and corrected sentences, recording input duration and WPM.
+- [x] **AI Auto-Reinforcement:** One-click activation of "Remedial Mode" for targeted training when errors are detected in free-form input.
 
 ---
 
-## 🚀 Quick Start
+## Quick Deployment
 
-### 1. Requirements
+### 1. Environment Preparation
 - Install [Ollama](https://ollama.com/).
-- Pull your preferred model (e.g., `deepseek-r1:8b` or `llama3`).
-  ```bash
-  ollama run deepseek-r1:8b
-  ```
+- Download recommended models: `ollama pull llama3.2` (balanced) or `ollama pull qwen2.5` (excellent Chinese comprehension).
 
-### 2. Launch Ollama (CORS Configuration)
-To allow the browser to communicate with your local API, restart Ollama with the following command:
+### 2. Start Ollama (CORS Configuration)
+To allow the web page to communicate with the local API, CORS settings must be enabled:
 
 **Windows (PowerShell):**
 ```powershell
 $env:OLLAMA_ORIGINS="*"; ollama serve
 ```
 
+
 **macOS/Linux:**
 ```bash
 OLLAMA_ORIGINS="*" ollama serve
 ```
 
-### 3. Run the App
-1. Clone or download this repository.
-2. Open `index.html` in your browser.
-3. Select your model from the dropdown, input a pattern, and click **Start Training**.
+
+### 3. Run the Project
+1. Download `index.html`.
+2. Open it in your browser and confirm that the **Ollama: Online** indicator in the top right is green.
 
 ---
 
-## 📗 Drill Mode Guide
+## Training Mode Descriptions
 
-| Mode | Description | Best For |
+| Mode | Corresponding Level | Description |
 | :--- | :--- | :--- |
-| **Simple** | Keeps sentence structure, changes only keywords | Expanding vocabulary & basic speed |
-| **Grammar** | Shifts Subject (I/He/They) or Tense | Fixing "Third-person S" & Tense errors |
-| **Syntax** | Converts to Questions or Negatives | Training oral flexibility & public speaking |
+| **Simple** | Substitution | Keeps the sentence structure unchanged, replacing only specific vocabulary. |
+| **Morphology** | Grammar | Changes the subject (I/He/They) or tense to strengthen grammatical accuracy. |
+| **Transformation** | Syntax | Converts sentences into questions or negatives to train logical reflexes. |
 
 ---
 
-## 🏄‍♂️ Contribution
+## Data Tracking & Privacy
 
-Contributions are welcome! Feel free to:
-- Optimize AI Prompts.
-- Improve the Typing UI/UX.
-- Add more pre-defined local API wordbanks.
-
----
-
-## 🎁 Acknowledgments
-
-- **Qwerty Learner:** Core inspiration for the visual and typing logic.
-- **Ollama:** Providing a robust local LLM environment.
-- **Local AI Community:** For the amazing push toward data sovereignty.
+All training data, error records, and personal statistics for this project are stored in the browser's `localStorage`.
+- **100% Privacy:** No login required, no internet connection needed.
+- **Clear Anytime:** A "Clear Data" function is provided to reset all learning progress with one click.
 
 ---
 
-**🌟 If this project helps you, please give it a Star!**
+**If this project helps you, feel free to give it a Star!**
