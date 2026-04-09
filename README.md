@@ -7,6 +7,10 @@
 
 ---
 
+<p align="center">
+  <a href="./docs/README_en.md">English</a>
+</p>
+
 ## 在線訪問
 
 > **注意：** 由於本專案需連接你本地運行的Ollama服務，請確保已按照 [快速部署](#-快速部署) 步驟啟動服務。
