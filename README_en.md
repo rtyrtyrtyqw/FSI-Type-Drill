@@ -8,7 +8,7 @@
 ---
 
 <p align="center">
-  <a href="./docs/README.md">繁體中文</a>
+  <a href="README.md">繁體中文</a>
 </p>
 
 ## Online Access
