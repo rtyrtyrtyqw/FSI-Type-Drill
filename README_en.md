@@ -7,6 +7,10 @@
 
 ---
 
+<p align="center">
+  <a href="./docs/README.md">繁體中文</a>
+</p>
+
 ## Online Access
 
 > **Note:** Since this project connects to your locally running Ollama service, please ensure the service is started according to the [Quick Deployment](#-quick-deployment) steps.
