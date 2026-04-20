@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FSI Local AI Type-Drill (Closed-loop)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .cursor-active { border-bottom: 3px solid #3b82f6; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+        .char-correct { color: #10b981; text-shadow: 0 0 10px rgba(16,185,129,0.4); }
+        .char-wrong   { color: #ef4444; background: #fee2e2; border-radius: 4px; }
+        .font-mono    { font-family: 'Cascadia Code','Fira Code','Consolas',monospace; }
+        .char-box     { min-width:.6em; display:inline-block; text-align:center; margin:0 3px; transition:all .1s; }
+        .level-btn    { transition:all .2s; border:1px solid #374151; }
+        .level-btn.active { background:#3b82f6; border-color:#3b82f6; color:#fff; box-shadow:0 0 15px rgba(59,130,246,.4); }
+
+        /* Error log */
+        .err-row        { transition:background .15s; cursor:pointer; }
+        .err-row:hover  { background:rgba(239,68,68,.06); }
+        .err-badge      { font-size:.62rem; padding:1px 7px; border-radius:9999px; }
+        .detail-panel   { animation:slideDown .18s ease; }
+        @keyframes slideDown { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+
+        /* Diff highlights */
+        .word-ok  { color:#d1fae5; }
+        .word-del { color:#fca5a5; text-decoration:line-through; background:rgba(239,68,68,.15); border-radius:3px; padding:0 3px; }
+        .word-ins { color:#6ee7b7; background:rgba(16,185,129,.15); border-radius:3px; padding:0 3px; }
+
+        /* Timer progress bar */
+        .timer-bar  { height:3px; background:#374151; border-radius:2px; overflow:hidden; }
+        .timer-fill { height:100%; background:linear-gradient(90deg,#3b82f6,#8b5cf6); transition:width .5s linear; }
+
+        ::-webkit-scrollbar { width:6px; }
+        ::-webkit-scrollbar-track { background:#1f2937; }
+        ::-webkit-scrollbar-thumb { background:#4b5563; border-radius:3px; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
+
+<div id="app" class="w-full max-w-5xl">
+
+    <!-- ══════════════════  HOME  ══════════════════ -->
+    <div v-if="!isStarted" class="bg-gray-800 p-8 rounded-2xl shadow-2xl border border-gray-700 space-y-8">
+
+        <!-- Header -->
+        <div class="flex justify-between items-center flex-wrap gap-4">
+            <h1 class="text-3xl font-bold text-blue-400 flex items-center gap-3">
+                <i class="fas fa-brain"></i> FSI Local AI System
+            </h1>
+            <div class="flex items-center gap-4 text-xs text-gray-500">
+                <span :class="apiStatus ? 'text-green-500 font-semibold':'text-red-500 font-semibold'">
+                    <i class="fas fa-network-wired"></i> {{ apiStatus ? (provider === 'ollama' ? 'Ollama' : 'LM Studio')+' Online' : 'Offline' }}
+                </span>
+                <button @click="clearHistory" class="hover:text-red-400 underline transition"><i class="fas fa-trash-alt"></i> 清除資料</button>
+            </div>
+        </div>
+
+        <!-- Model + Level -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-900/50 p-5 rounded-xl border border-gray-700">
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-gray-400 uppercase tracking-wider">Provider</label>
+                <div class="flex gap-2">
+                    <select v-model="provider" @change="switchProvider" class="flex-1 p-3 bg-gray-800 rounded-lg border border-gray-600 outline-none focus:border-blue-500 transition cursor-pointer text-sm">
+                        <option value="ollama">Ollama</option>
+                        <option value="lmstudio">LM Studio</option>
+                    </select>
+                    <button @click="fetchModels" class="p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition"><i class="fas fa-sync-alt"></i></button>
+                </div>
+            </div>
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-gray-400 uppercase tracking-wider">Select Local Model</label>
+                <div class="flex gap-2">
+                    <select v-model="modelName" class="flex-1 p-3 bg-gray-800 rounded-lg border border-gray-600 outline-none focus:border-blue-500 transition cursor-pointer text-sm">
+                        <option v-for="m in availableModels" :key="m.name || m.id" :value="m.name || m.id">{{ m.name || m.id }}</option>
+                        <option value="custom">-- Manual Input --</option>
+                    </select>
+                    <input v-if="modelName==='custom'" v-model="customModelName" placeholder="輸入模型名稱" class="flex-1 p-3 bg-gray-800 rounded-lg border border-gray-600 outline-none text-sm">
+                </div>
+            </div>
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-gray-400 uppercase tracking-wider">Drill Level</label>
+                <div class="flex gap-2">
+                    <button v-for="(desc,lv) in levels" :key="lv" @click="currentLevel=lv"
+                            :class="['flex-1 p-2 rounded-lg text-xs transition border border-gray-600', currentLevel===lv ? 'active bg-blue-600 text-white':'bg-gray-800 text-gray-400 hover:bg-gray-700']">
+                        {{ lv }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Weakness Stats -->
+        <div class="space-y-4">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                <i class="fas fa-chart-pie text-blue-400"></i> User Model 弱點分析
+            </h2>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div v-for="(stats,type) in userStats" :key="type"
+                     class="bg-gray-900 p-4 rounded-xl border border-gray-700 flex flex-col justify-center items-center relative overflow-hidden">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">{{ type }}</div>
+                    <div class="text-2xl font-bold" :class="getErrorRateColor(type)">{{ calculateErrorRate(type) }}%</div>
+                    <div class="text-[10px] text-gray-600 mt-1">Errors: {{ stats.errors }}</div>
+                    <div class="absolute bottom-0 left-0 h-1 bg-gray-800 w-full">
+                        <div class="h-full transition-all duration-500" :class="getErrorRateBgColor(type)" :style="{width:calculateErrorRate(type)+'%'}"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ ERROR TRACKING PANEL ══ -->
+        <div class="space-y-3">
+            <div class="flex items-center justify-between">
+                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                    <i class="fas fa-bug text-red-400"></i> 錯誤追蹤紀錄
+                    <span v-if="grammarErrorLog.length>0" class="bg-red-500/20 text-red-400 err-badge border border-red-500/30">
+                        {{ grammarErrorLog.length }} 筆
+                    </span>
+                </h2>
+                <div class="flex gap-3 text-xs">
+                    <button @click="showErrorLog=!showErrorLog" class="text-gray-500 hover:text-gray-300 transition">
+                        <i :class="['fas',showErrorLog?'fa-chevron-up':'fa-chevron-down']"></i>
+                        {{ showErrorLog?'收合':'展開' }}
+                    </button>
+                    <button v-if="grammarErrorLog.length>0" @click="clearErrorLog" class="text-red-500/60 hover:text-red-400 transition">
+                        <i class="fas fa-eraser"></i> 清除
+                    </button>
+                </div>
+            </div>
+
+            <!-- Summary chips -->
+            <div class="flex flex-wrap gap-2" v-if="grammarErrorLog.length>0">
+                <div v-for="(count,cat) in errorSummary" :key="cat"
+                     class="flex items-center gap-1 px-3 py-1 rounded-full text-xs border"
+                     :class="count>3?'bg-red-900/30 border-red-700/50 text-red-300':'bg-yellow-900/30 border-yellow-700/50 text-yellow-300'">
+                    <i class="fas fa-exclamation-circle"></i> {{ cat }}: {{ count }}
+                </div>
+            </div>
+
+            <!-- Empty state -->
+            <div v-if="grammarErrorLog.length===0" class="bg-gray-900/40 border border-gray-700 rounded-xl p-6 text-center text-gray-600 text-sm">
+                <i class="fas fa-check-circle text-2xl text-green-700 mb-2 block"></i>
+                尚無文法／單字錯誤紀錄，分析句子後錯誤會顯示在這裡。
+            </div>
+
+            <!-- Log table — expandable rows -->
+            <div v-show="showErrorLog && grammarErrorLog.length>0"
+                 class="bg-gray-900/50 border border-gray-700 rounded-xl overflow-hidden">
+                <div class="max-h-[30rem] overflow-y-auto">
+                    <table class="w-full text-xs">
+                        <thead class="sticky top-0 bg-gray-900 border-b border-gray-700 text-gray-500 uppercase z-10">
+                            <tr>
+                                <th class="px-3 py-2 w-6"></th>
+                                <th class="px-3 py-2 text-left">時間</th>
+                                <th class="px-3 py-2 text-left">錯誤類型</th>
+                                <th class="px-3 py-2 text-left">原句（摘要）</th>
+                                <th class="px-3 py-2 text-right">輸入用時</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template v-for="entry in [...grammarErrorLog].reverse()" :key="entry.id">
+
+                                <!-- ── Summary row ── -->
+                                <tr class="err-row border-b border-gray-800/80" @click="toggleExpand(entry.id)">
+                                    <td class="px-3 py-2.5 text-gray-600">
+                                        <i :class="['fas text-[10px] transition-transform duration-200',
+                                            expandedId===entry.id ? 'fa-chevron-down text-blue-400':'fa-chevron-right']"></i>
+                                    </td>
+                                    <td class="px-3 py-2.5 text-gray-500 whitespace-nowrap">{{ entry.time }}</td>
+                                    <td class="px-3 py-2.5">
+                                        <span class="err-badge border"
+                                              :class="entry.source==='vocabulary'
+                                                  ? 'bg-orange-900/40 border-orange-700/50 text-orange-300'
+                                                  : 'bg-purple-900/40 border-purple-700/50 text-purple-300'">
+                                            <i :class="['fas mr-0.5', entry.source==='vocabulary'?'fa-spell-check':'fa-language']"></i>
+                                            {{ entry.errorType }}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2.5 text-gray-400 font-mono max-w-[18rem] truncate" :title="entry.original">
+                                        {{ entry.original }}
+                                    </td>
+                                    <td class="px-3 py-2.5 text-right whitespace-nowrap"
+                                        :class="entry.durationSec!=null?'text-blue-400':'text-gray-600'">
+                                        <template v-if="entry.durationSec!=null">
+                                            {{ entry.durationSec }}s
+                                            <span v-if="entry.wpm" class="text-gray-500"> · {{ entry.wpm }} wpm</span>
+                                        </template>
+                                        <span v-else class="text-gray-700">—</span>
+                                    </td>
+                                </tr>
+
+                                <!-- ── Detail panel ── -->
+                                <tr v-if="expandedId===entry.id" class="border-b border-gray-800">
+                                    <td colspan="5" class="px-5 py-4 bg-gray-950/70">
+                                        <div class="detail-panel space-y-4">
+
+                                            <!-- Sentence diff -->
+                                            <div>
+                                                <div class="text-[10px] text-gray-600 uppercase tracking-wider mb-2">句子對比</div>
+                                                <div class="font-mono text-sm bg-gray-900 rounded-xl p-4 leading-loose space-y-2">
+                                                    <!-- Original row — show ok + del words -->
+                                                    <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
+                                                        <span class="text-[10px] text-gray-600 mr-1 shrink-0">原：</span>
+                                                        <template v-for="(tok,ti) in entry.diff" :key="'o'+ti">
+                                                            <span v-if="tok.type==='del'" class="word-del">{{ tok.word }}</span>
+                                                            <span v-else-if="tok.type==='ok'" class="word-ok">{{ tok.word }}</span>
+                                                            <!-- ins tokens are hidden in this row -->
+                                                        </template>
+                                                    </div>
+                                                    <!-- Corrected row — show ok + ins words -->
+                                                    <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
+                                                        <span class="text-[10px] text-gray-600 mr-1 shrink-0">正：</span>
+                                                        <template v-for="(tok,ti) in entry.diff" :key="'c'+ti">
+                                                            <span v-if="tok.type==='ins'" class="word-ins">{{ tok.corrWord }}</span>
+                                                            <span v-else-if="tok.type==='ok'" class="word-ok">{{ tok.word }}</span>
+                                                            <!-- del tokens are hidden in this row -->
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Explanation -->
+                                            <div>
+                                                <div class="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5">說明</div>
+                                                <div class="text-sm text-gray-300 bg-gray-900/70 rounded-xl px-4 py-3 border border-gray-800">
+                                                    {{ entry.explanation }}
+                                                </div>
+                                            </div>
+
+                                            <!-- Timing detail row -->
+                                            <div v-if="entry.durationSec!=null" class="flex flex-wrap gap-4 text-xs text-gray-500 pt-1">
+                                                <span><i class="fas fa-stopwatch mr-1 text-blue-500/70"></i>
+                                                    輸入用時 <strong class="text-blue-400">{{ entry.durationSec }}s</strong>
+                                                </span>
+                                                <span v-if="entry.wpm">
+                                                    <i class="fas fa-tachometer-alt mr-1 text-indigo-500/70"></i>
+                                                    打字速度 <strong class="text-indigo-400">{{ entry.wpm }} wpm</strong>
+                                                </span>
+                                                <span class="text-gray-700"><i class="fas fa-clock mr-1"></i>{{ entry.time }}</span>
+                                            </div>
+
+                                        </div>
+                                    </td>
+                                </tr>
+
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <!-- ══ END ERROR TRACKING ══ -->
+
+        <!-- Free Input + Pattern Drill -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 border-t border-gray-700 pt-8">
+
+            <!-- Free Input -->
+            <div class="space-y-4 bg-gray-800/50 p-6 rounded-2xl border border-gray-700 relative">
+                <div class="absolute -top-3 left-4 bg-gray-800 px-3 text-sm font-bold text-blue-400">
+                    <i class="fas fa-magic"></i> 自由輸入
+                </div>
+                <textarea v-model="freeInputSentence"
+                          @focus="onFreeInputFocus"
+                          @input="onFreeInputActivity"
+                          @keyup.enter.ctrl="analyzeError"
+                          rows="3" placeholder="例如：I go yesterday..."
+                          class="w-full p-4 bg-gray-900 rounded-xl border border-gray-700 outline-none focus:border-blue-500 transition text-lg resize-none"></textarea>
+
+                <!-- Live timer badge -->
+                <div v-if="freeInputStartTs && freeInputSentence.trim()"
+                     class="flex items-center gap-2 text-xs text-gray-500">
+                    <i class="fas fa-stopwatch text-blue-500/70"></i>
+                    輸入中：<strong class="text-blue-400 font-mono">{{ liveInputSec }}s</strong>
+                    <span v-if="liveInputWpm" class="text-indigo-400">· {{ liveInputWpm }} wpm</span>
+                </div>
+
+                <div v-if="analysisResult" class="p-4 rounded-xl text-sm border flex items-start gap-3"
+                     :class="analysisResult.error_type==='none'
+                         ? 'bg-green-900/30 border-green-700/50 text-green-200'
+                         : 'bg-red-900/30 border-red-700/50 text-red-200'">
+                    <i :class="['fas mt-1', analysisResult.error_type==='none'?'fa-check-circle':'fa-exclamation-triangle']"></i>
+                    <div>
+                        <strong class="block mb-1">
+                            {{ analysisResult.error_type==='none' ? '完美！' : `發現錯誤：${analysisResult.error_type}` }}
+                        </strong>
+                        <p class="opacity-90">{{ analysisResult.explanation }}</p>
+                        <p v-if="analysisResult.error_type!=='none'"
+                           class="mt-2 text-xs font-mono bg-gray-900/50 p-2 rounded">
+                            修正: {{ analysisResult.correct_sentence }}
+                        </p>
+                    </div>
+                </div>
+
+                <button @click="analyzeError" :disabled="loadingError||!apiStatus||!freeInputSentence.trim()"
+                        class="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold flex justify-center items-center gap-2">
+                    <i v-if="loadingError" class="fas fa-spinner fa-spin"></i>
+                    {{ loadingError ? '分析中...' : '送出分析' }}
+                </button>
+            </div>
+
+            <!-- Pattern Drill -->
+            <div class="space-y-4 bg-gray-800/50 p-6 rounded-2xl border border-gray-700 relative">
+                <div class="absolute -top-3 left-4 bg-gray-800 px-3 text-sm font-bold text-indigo-400">
+                    <i class="fas fa-th-list"></i> 句型練習
+                </div>
+                <div class="flex justify-between items-center">
+                    <label class="text-sm text-gray-400">每日推薦</label>
+                    <button @click="fetchRecommendations" :disabled="loadingRec||!apiStatus"
+                            class="text-xs text-indigo-400 hover:text-indigo-300">
+                        <i :class="['fas fa-sync-alt mr-1', loadingRec?'fa-spin':'']"></i> 推薦句型
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 gap-2">
+                    <div v-for="rec in recommendations" :key="rec.pattern"
+                         @click="baseSentence=rec.pattern"
+                         class="p-3 rounded-lg bg-gray-900/60 border border-gray-700 cursor-pointer hover:border-indigo-500 transition">
+                        <div class="flex justify-between text-[10px]">
+                            <span class="text-indigo-400 font-bold uppercase">{{ rec.tag }}</span>
+                            <span class="text-gray-500 italic">{{ rec.note }}</span>
+                        </div>
+                        <div class="text-sm font-mono text-gray-300">{{ rec.pattern }}</div>
+                    </div>
+                </div>
+                <input v-model="baseSentence" @keyup.enter="generatePatternDrills"
+                       placeholder="使用 [ ] 挖空"
+                       class="w-full p-4 bg-gray-900 rounded-xl border border-gray-700 outline-none focus:border-indigo-500 transition text-lg">
+                <button @click="generatePatternDrills" :disabled="loadingPattern||!apiStatus||!baseSentence.trim()"
+                        class="w-full bg-indigo-600 hover:bg-indigo-500 py-4 rounded-xl font-bold flex justify-center items-center gap-2">
+                    <i v-if="loadingPattern" class="fas fa-spinner fa-spin"></i> 開始訓練
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════  DRILL SCREEN  ══════════════════ -->
+    <div v-else class="text-center animate-in fade-in zoom-in-95 duration-500">
+
+        <!-- Top bar -->
+        <div class="mb-4 flex justify-between items-center text-gray-400 px-4">
+            <span class="text-2xl font-black text-blue-400">{{ currentIndex+1 }} / {{ sentences.length }}</span>
+            <div class="flex items-center gap-3 flex-wrap justify-end">
+                <!-- Mistake badge -->
+                <div class="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full"
+                     :class="typingMistakesThisDrill>0
+                         ? 'bg-red-900/40 border border-red-700/50 text-red-300'
+                         : 'bg-green-900/20 border border-green-700/30 text-green-500'">
+                    <i :class="['fas',typingMistakesThisDrill>0?'fa-times-circle':'fa-check-circle']"></i>
+                    本題錯誤：{{ typingMistakesThisDrill }}
+                </div>
+                <!-- Live drill timer -->
+                <div class="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full bg-gray-800 border border-gray-700">
+                    <i class="fas fa-stopwatch text-blue-500/70"></i>
+                    <span class="font-mono text-blue-300">{{ drillLiveSec }}s</span>
+                </div>
+                <!-- Last sentence WPM -->
+                <div v-if="lastSentenceWpm" class="text-xs text-gray-600">
+                    上題 <span class="text-indigo-400 font-bold">{{ lastSentenceWpm }} wpm</span>
+                </div>
+                <button @click="reset" class="hover:text-red-400 transition text-sm ml-1">
+                    <i class="fas fa-sign-out-alt"></i> 結束
+                </button>
+            </div>
+        </div>
+
+        <!-- Progress bar (30 s reference) -->
+        <div class="timer-bar mx-4 mb-6">
+            <div class="timer-fill" :style="{width:Math.min(drillLiveSec/30*100,100)+'%'}"></div>
+        </div>
+
+        <!-- Remedial context -->
+        <div v-if="currentContext" class="mb-6 mx-auto max-w-2xl bg-red-900/20 border border-red-700/30 p-4 rounded-xl text-left">
+            <div class="text-xs text-red-400 font-bold uppercase mb-2">補強: {{ currentContext.error_type }}</div>
+            <div class="text-sm text-gray-300">{{ currentContext.explanation }}</div>
+        </div>
+
+        <!-- Typing area -->
+        <div class="bg-gray-800/40 p-10 md:p-20 rounded-[2.5rem] border border-gray-700 mb-8 shadow-2xl">
+            <div class="text-3xl md:text-5xl font-mono leading-relaxed flex flex-wrap justify-center items-center">
+                <span v-for="(char,index) in currentSentence" :key="index"
+                      :class="[getCharClass(index), char===' '?'mx-2 md:mx-3':'']"
+                      class="char-box">{{ char===' '?'&nbsp;':char }}</span>
+                <span v-if="userInput.length===currentSentence.length" class="char-box cursor-active">&nbsp;</span>
+            </div>
+            <div class="text-xl md:text-2xl text-gray-500 mt-12 font-sans italic opacity-70">{{ currentTranslation }}</div>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
+
+createApp({
+    setup() {
+
+        /* ─── Core state ─────────────────────────────────── */
+        const provider = ref('ollama'); // 'ollama' or 'lmstudio'
+        const ollamaUrl = ref('http://127.0.0.1:11434');
+        const lmstudioUrl = ref('http://127.0.0.1:1234/v1');
+        const apiUrl = computed(() => provider.value === 'ollama' ? ollamaUrl.value : lmstudioUrl.value);
+        const modelName       = ref('');
+        const customModelName = ref('');
+        const availableModels = ref([]);
+        const apiStatus       = ref(false);
+        const recommendations = ref([
+            { tag:'Conversation', pattern:'I was wondering if I could [verb].', note:'Polite request' },
+            { tag:'Work',         pattern:'We need to focus on [topic].',       note:'Meeting focus'  }
+        ]);
+
+        const baseSentence      = ref('I usually [activity] after work.');
+        const freeInputSentence = ref('');
+        const analysisResult    = ref(null);
+        const userStats = ref({
+            tense:       { attempts:0, errors:0 },
+            word_order:  { attempts:0, errors:0 },
+            preposition: { attempts:0, errors:0 },
+            article:     { attempts:0, errors:0 },
+            vocabulary:  { attempts:0, errors:0 }
+        });
+
+        const isStarted               = ref(false);
+        const loadingError            = ref(false);
+        const loadingPattern          = ref(false);
+        const loadingRec              = ref(false);
+        const sentences               = ref([]);
+        const currentIndex            = ref(0);
+        const userInput               = ref('');
+        const currentContext          = ref(null);
+        const typingMistakesThisDrill = ref(0);
+        const sessionMistakes         = ref(0);
+        const currentLevel            = ref('Simple');
+        const levels = { Simple:'Substitution', Morphology:'Grammar', Transformation:'Syntax' };
+
+        const activeModel = computed(() =>
+            modelName.value === 'custom' ? customModelName.value : modelName.value);
+
+        const currentSentence = computed(() => {
+            if (sentences.value.length > 0 && sentences.value[currentIndex.value])
+                return sentences.value[currentIndex.value].en || '';
+            return '';
+        });
+
+        const currentTranslation = computed(() => {
+            const item = sentences.value[currentIndex.value];
+            return item ? (item.tw || item.translation || '') : '';
+        });
+
+        /* ─── Free-input timing ──────────────────────────── */
+        // freeInputStartTs: timestamp of first keystroke after focus
+        const freeInputStartTs = ref(null);
+        const liveInputSec     = ref(0);
+        const liveInputWpm     = ref(null);
+        let   freeInputTimer   = null;
+
+        function onFreeInputFocus() {
+            // Only reset if textarea is empty (new sentence attempt)
+            if (!freeInputSentence.value.trim()) {
+                freeInputStartTs.value = null;
+                liveInputSec.value = 0;
+                liveInputWpm.value = null;
+            }
+        }
+
+        function onFreeInputActivity() {
+            if (!freeInputStartTs.value && freeInputSentence.value.trim()) {
+                // First character typed — start timer
+                freeInputStartTs.value = Date.now();
+                if (freeInputTimer) clearInterval(freeInputTimer);
+                freeInputTimer = setInterval(() => {
+                    if (!freeInputStartTs.value) return;
+                    const sec = Math.floor((Date.now() - freeInputStartTs.value) / 1000);
+                    liveInputSec.value = sec;
+                    liveInputWpm.value = calcWpm(freeInputSentence.value, sec);
+                }, 500);
+            }
+        }
+
+        function stopFreeInputTimer() {
+            if (freeInputTimer) { clearInterval(freeInputTimer); freeInputTimer = null; }
+            const sec = freeInputStartTs.value
+                ? Math.round((Date.now() - freeInputStartTs.value) / 1000) : null;
+            freeInputStartTs.value = null;
+            liveInputSec.value = 0;
+            liveInputWpm.value = null;
+            return sec;
+        }
+
+        /* ─── Drill timing ───────────────────────────────── */
+        let   drillSentenceStart = null;
+        let   drillLiveTimer     = null;
+        const drillLiveSec       = ref(0);
+        const lastSentenceWpm    = ref(null);
+
+        function startDrillTimer() {
+            drillSentenceStart = Date.now();
+            drillLiveSec.value = 0;
+            if (drillLiveTimer) clearInterval(drillLiveTimer);
+            drillLiveTimer = setInterval(() => {
+                if (drillSentenceStart)
+                    drillLiveSec.value = Math.floor((Date.now() - drillSentenceStart) / 1000);
+            }, 500);
+        }
+
+        function stopDrillTimer() {
+            if (drillLiveTimer) { clearInterval(drillLiveTimer); drillLiveTimer = null; }
+            const elapsed = drillSentenceStart
+                ? Math.round((Date.now() - drillSentenceStart) / 1000) : null;
+            drillSentenceStart = null;
+            return elapsed;
+        }
+
+        function calcWpm(sentence, seconds) {
+            if (!sentence || !seconds || seconds < 1) return null;
+            const words = sentence.trim().split(/\s+/).length;
+            return Math.round((words / seconds) * 60);
+        }
+
+        /* ─── Grammar / Vocab error log ──────────────────── */
+        // Only grammar-type and vocabulary errors are logged here (not raw typos)
+        const grammarErrorLog = ref([]);
+        const showErrorLog    = ref(false);
+        const expandedId      = ref(null);
+        let   idSeq           = 0;
+
+        const errorSummary = computed(() => {
+            const s = {};
+            grammarErrorLog.value.forEach(e => { s[e.errorType] = (s[e.errorType] || 0) + 1; });
+            return s;
+        });
+
+        // Word-level diff for sentence comparison
+        function wordDiff(original, corrected) {
+            const ow = (original  || '').trim().split(/\s+/);
+            const cw = (corrected || '').trim().split(/\s+/);
+            const tokens = [];
+
+            // Simple index-based alignment (covers substitution, insertion, deletion)
+            const maxLen = Math.max(ow.length, cw.length);
+            for (let i = 0; i < maxLen; i++) {
+                const o = ow[i], c = cw[i];
+                if (o === undefined) {
+                    // extra word in corrected
+                    tokens.push({ type:'ins', word:'', corrWord: c });
+                } else if (c === undefined) {
+                    // extra word in original (should be removed)
+                    tokens.push({ type:'del', word: o, corrWord:'' });
+                } else if (o === c) {
+                    tokens.push({ type:'ok', word: o, corrWord: c });
+                } else {
+                    // substitution — one del token (shown in original row)
+                    // and one ins token (shown in corrected row)
+                    tokens.push({ type:'del', word: o, corrWord: c });
+                    tokens.push({ type:'ins', word: o, corrWord: c });
+                }
+            }
+            return tokens;
+        }
+
+        function logGrammarError({ source, errorType, original, corrected, explanation, durationSec, wpm }) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('zh-TW',
+                { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+            grammarErrorLog.value.push({
+                id:          ++idSeq,
+                time:        timeStr,
+                source,                  // 'grammar' | 'vocabulary'
+                errorType,
+                original:    original    || '',
+                corrected:   corrected   || '',
+                explanation: explanation || '',
+                diff:        wordDiff(original, corrected),
+                durationSec: durationSec ?? null,
+                wpm:         wpm         ?? null
+            });
+            if (grammarErrorLog.value.length > 200) grammarErrorLog.value.shift();
+            saveErrorLog();
+        }
+
+        function toggleExpand(id) {
+            expandedId.value = expandedId.value === id ? null : id;
+        }
+
+        function clearErrorLog() {
+            if (confirm('清除所有文法 / 單字錯誤紀錄？')) {
+                grammarErrorLog.value = [];
+                expandedId.value = null;
+                localStorage.removeItem('fsi_grammar_error_log');
+            }
+        }
+
+        function saveErrorLog() {
+            localStorage.setItem('fsi_grammar_error_log',
+                JSON.stringify(grammarErrorLog.value.slice(-200)));
+        }
+
+        function loadErrorLog() {
+            const saved = localStorage.getItem('fsi_grammar_error_log');
+            if (!saved) return;
+            try {
+                grammarErrorLog.value = JSON.parse(saved);
+                idSeq = grammarErrorLog.value.reduce((m, e) => Math.max(m, e.id || 0), 0);
+            } catch(_) {}
+        }
+
+        /* ─── JSON helpers ───────────────────────────────── */
+        function _unwrap(result) {
+            if (Array.isArray(result)) return result;
+            if (result && typeof result === 'object') {
+                for (const key of Object.keys(result)) {
+                    if (Array.isArray(result[key]) && result[key].length > 0) return result[key];
+                }
+                const vals = Object.values(result);
+                if (vals.length > 1 && vals.every(v => v && typeof v === 'object' && ('en' in v || 'tw' in v)))
+                    return vals;
+                return result;
+            }
+            return null;
+        }
+
+        function extractJSON(rawText) {
+            if (typeof rawText !== 'string' || !rawText) return null;
+            let text = rawText
+                .replace(/<think>[\s\S]*?<\/think>/g, '')
+                .replace(/ thinker>[\s\S]*?<\/thinker>/g, '')
+                .replace(/```(?:json)?([\s\S]*?)```/g, '$1')
+                .replace(/`{1,3}json\s*/g, '')
+                .replace(/`{1,3}/g, '')
+                .trim();
+            try { return _unwrap(JSON.parse(text)); } catch(_) {}
+
+            const arrStart = text.indexOf('[');
+            if (arrStart !== -1) {
+                let depth = 0, end = -1;
+                for (let i = arrStart; i < text.length; i++) {
+                    if (text[i] === '[') depth++;
+                    else if (text[i] === ']') { depth--; if (depth === 0) { end = i; break; } }
+                }
+                if (end !== -1) {
+                    try { const r = JSON.parse(text.slice(arrStart, end+1)); if (Array.isArray(r)) return r; }
+                    catch(e) { console.warn('JSON array parse 失敗:', e.message); }
+                }
+            }
+
+            const objStart = text.indexOf('{');
+            if (objStart !== -1) {
+                let depth = 0, end = -1;
+                for (let i = objStart; i < text.length; i++) {
+                    if (text[i] === '{') depth++;
+                    else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+                }
+                if (end !== -1) {
+                    try { return _unwrap(JSON.parse(text.slice(objStart, end+1))); }
+                    catch(e) { console.error('JSON object parse 失敗:', e.message); }
+                }
+            }
+            return null;
+        }
+
+        /* ─── API ────────────────────────────────────────── */
+        async function fetchModels() {
+            try {
+                const endpoint = provider.value === 'ollama' ? '/api/tags' : '/models';
+                const res = await fetch(`${apiUrl.value}${endpoint}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                // Ollama: data.models[], LM Studio: data.data[]
+                availableModels.value = provider.value === 'ollama' 
+                    ? (data.models || []) 
+                    : (data.data || []);
+                apiStatus.value = true;
+                if (availableModels.value.length > 0 && !modelName.value) {
+                    // Ollama uses .name, LM Studio uses .id
+                    const firstModel = availableModels.value[0];
+                    modelName.value = firstModel.name || firstModel.id;
+                }
+            } catch(e) { 
+                console.error('API Error:', e); 
+                apiStatus.value = false; 
+            }
+        }
+
+        async function switchProvider() {
+            modelName.value = '';
+            availableModels.value = [];
+            fetchModels();
+        }
+
+        // Helper to build API request body for both providers
+        function buildApiBody(prompt, options = {}) {
+            if (provider.value === 'ollama') {
+                const ollamaBody = { model: activeModel.value, prompt, stream:false };
+                if (options.format) ollamaBody.format = options.format;
+                if (options.temperature !== undefined) ollamaBody.options = { temperature: options.temperature };
+                if (options.max_tokens) ollamaBody.options = { ...(ollamaBody.options||{}), num_predict: options.max_tokens };
+                return ollamaBody;
+            } else {
+                return { 
+                    model: activeModel.value, 
+                    messages:[{role:'user', content:prompt}], 
+                    max_tokens: options.max_tokens || 500, 
+                    temperature: options.temperature || 0.7,
+                    stream: false
+                };
+            }
+        }
+
+        // Helper to extract response from both providers
+        function extractResponse(data) {
+            if (provider.value === 'ollama') {
+                // Ollama: check response, then thinking (when format:json is used)
+                return data?.response || data?.thinking;
+            } else {
+                return data?.choices?.[0]?.message?.content;
+            }
+        }
+
+        async function fetchRecommendations() {
+            if (!apiStatus.value || !activeModel.value) return;
+            loadingRec.value = true;
+            try {
+                const endpoint = provider.value === 'ollama' ? '/api/generate' : '/chat/completions';
+                const prompt = `Generate 4 English sentence patterns for FSI language drill at ${currentLevel.value} level.
+Return ONLY a JSON array. Each item must have: "tag", "pattern" (with [blank]), "note".
+Example: [{"tag":"Work","pattern":"We need to [verb] the [noun].","note":"Action focus"}]`;
+                const body = buildApiBody(prompt, { max_tokens: 500, temperature: 0.7 });
+                const res = await fetch(`${apiUrl.value}${endpoint}`, {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify(body)
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const content = extractResponse(data);
+                    if (content) {
+                        const parsed = extractJSON(content);
+                        const list = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : null);
+                        if (list && list.length > 0) recommendations.value = list;
+                    }
+                }
+            } catch(e) { console.error('fetchRecommendations 失敗:', e); }
+            finally { loadingRec.value = false; }
+        }
+
+        function speak(text) {
+            if (!text || !window.speechSynthesis) return;
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = 'en-US'; u.rate = 0.9;
+            window.speechSynthesis.speak(u);
+        }
+
+        function startDrillSession(dataList, context = null) {
+            const validData = Array.isArray(dataList) ? dataList : [dataList];
+            isStarted.value = false;
+            sentences.value = [];
+            userInput.value = '';
+            typingMistakesThisDrill.value = 0;
+            sessionMistakes.value = 0;
+            lastSentenceWpm.value = null;
+            stopDrillTimer();
+            drillLiveSec.value = 0;
+
+            nextTick(() => {
+                sentences.value   = validData;
+                currentIndex.value = 0;
+                isStarted.value   = true;
+                currentContext.value = context;
+                setTimeout(() => {
+                    startDrillTimer();
+                    if (currentSentence.value) speak(currentSentence.value);
+                }, 100);
+            });
+        }
+
+        async function generatePatternDrills() {
+            if (!baseSentence.value || !activeModel.value) return;
+            loadingPattern.value = true;
+            try {
+                const pattern = baseSentence.value;
+                const prompt =
+`Generate 5 English sentences by filling in the blank in this pattern: "${pattern}"
+Use 5 different words or phrases for the blank each time.
+Reply with ONLY a JSON array, no explanation, no markdown.
+
+Example output:
+[
+  {"en": "I usually read a book after work.", "tw": "我通常下班後看書。"},
+  {"en": "I usually go for a run after work.", "tw": "我通常下班後去跑步。"},
+  {"en": "I usually cook dinner after work.", "tw": "我通常下班後做晚飯。"},
+  {"en": "I usually watch TV after work.", "tw": "我通常下班後看電視。"},
+  {"en": "I usually call my family after work.", "tw": "我通常下班後打電話給家人。"}
+]
+
+Now do the same for: "${pattern}"`;
+
+                const endpoint = provider.value === 'ollama' ? '/api/generate' : '/chat/completions';
+                const body = buildApiBody(prompt, { max_tokens: 700, temperature: 0.5 });
+                const res = await fetch(`${apiUrl.value}${endpoint}`, {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify(body)
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const content = extractResponse(data) || '';
+                const parsed = extractJSON(content);
+                if (parsed) {
+                    const finalData = (Array.isArray(parsed) ? parsed : [parsed])
+                        .filter(item => item && (item.en || item.tw));
+                    if (finalData.length > 0) startDrillSession(finalData);
+                    else alert('模型回傳內容為空，請換個句型再試。');
+                } else {
+                    alert('模型回傳格式無法解析，請再試一次。');
+                }
+            } catch(e) {
+                console.error('🔴', e);
+                alert('連線或處理失敗: ' + e.message);
+            } finally { loadingPattern.value = false; }
+        }
+
+        async function analyzeError() {
+            if (!freeInputSentence.value.trim() || !activeModel.value) return;
+
+            // Capture & stop free-input timer
+            const durationSec = stopFreeInputTimer();
+            const wpm         = calcWpm(freeInputSentence.value, durationSec);
+
+            loadingError.value = true;
+            try {
+                const endpoint = provider.value === 'ollama' ? '/api/generate' : '/chat/completions';
+                const prompt = `Analyze the English sentence for grammar errors. Return ONLY a JSON object with these exact keys:
+- "error_type": one of "tense", "word_order", "preposition", "article", "vocabulary", or "none"
+- "correct_sentence": corrected version (same as input if no error)
+- "explanation": brief explanation in Traditional Chinese
+
+Input sentence: "${freeInputSentence.value}"`;
+                const body = buildApiBody(prompt, { max_tokens: 500, temperature: 0.3 });
+                const res = await fetch(`${apiUrl.value}${endpoint}`, {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                const content = extractResponse(data);
+                if (content) {
+                    const result = extractJSON(content);
+                    analysisResult.value = result;
+
+                    if (result?.error_type && result.error_type !== 'none') {
+                        // Update weakness stat
+                        if (userStats.value[result.error_type]) {
+                            userStats.value[result.error_type].errors++;
+                            userStats.value[result.error_type].attempts++;
+                            saveStats();
+                        }
+
+                        // ── Log to grammar/vocab error log ──
+                        logGrammarError({
+                            source:      result.error_type === 'vocabulary' ? 'vocabulary' : 'grammar',
+                            errorType:   result.error_type,
+                            original:    freeInputSentence.value,
+                            corrected:   result.correct_sentence,
+                            explanation: result.explanation,
+                            durationSec,
+                            wpm
+                        });
+                        // auto-expand so user can immediately see the detail
+                        showErrorLog.value = true;
+
+                        // Auto remedial drill
+                        setTimeout(async () => {
+                            try {
+                                const drillEndpoint = provider.value === 'ollama' ? '/api/generate' : '/chat/completions';
+                                const drillPrompt = `Create 3 remedial exercises for error type ${result.error_type}. JSON: [{"en":"...","tw":"..."}]`;
+                                const drillBody = buildApiBody(drillPrompt, { max_tokens: 500, temperature: 0.5 });
+                                const drillRes = await fetch(`${apiUrl.value}${drillEndpoint}`, {
+                                    method:'POST', headers:{'Content-Type':'application/json'},
+                                    body: JSON.stringify(drillBody)
+                                });
+                                const drillData   = await drillRes.json();
+                                const parsedDrill = extractJSON(extractResponse(drillData));
+                                if (parsedDrill) startDrillSession(parsedDrill, result);
+                            } catch(e) { console.error('Remedial drill failed:', e); }
+                        }, 2000);
+                    }
+                }
+            } finally { loadingError.value = false; }
+        }
+
+        /* ─── Drill keyboard ─────────────────────────────── */
+        function getCharClass(index) {
+            if (index < userInput.value.length)
+                return userInput.value[index] === currentSentence.value[index]
+                    ? 'char-correct font-bold' : 'char-wrong';
+            return index === userInput.value.length ? 'cursor-active opacity-100' : 'opacity-40';
+        }
+
+        function handleKeyDown(e) {
+            if (!isStarted.value) return;
+            if (e.key === 'Backspace') { userInput.value = userInput.value.slice(0, -1); return; }
+            if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key === ' ') e.preventDefault();
+
+            // Start per-sentence timer on very first key
+            if (userInput.value.length === 0) startDrillTimer();
+
+            const target = currentSentence.value;
+            if (userInput.value.length < target.length) {
+                const targetChar = target[userInput.value.length];
+                userInput.value += e.key;
+                if (e.key !== targetChar) {
+                    typingMistakesThisDrill.value++;
+                    sessionMistakes.value++;
+                }
+            }
+
+            if (userInput.value === target) {
+                const elapsed = stopDrillTimer();
+                lastSentenceWpm.value = calcWpm(target, elapsed);
+                speak(target);
+
+                setTimeout(() => {
+                    if (currentIndex.value < sentences.value.length - 1) {
+                        currentIndex.value++;
+                        userInput.value = '';
+                        typingMistakesThisDrill.value = 0;
+                        drillLiveSec.value = 0;
+                        nextTick(() => {
+                            startDrillTimer();
+                            if (currentSentence.value) speak(currentSentence.value);
+                        });
+                    } else {
+                        const msg = sessionMistakes.value === 0
+                            ? '🎉 訓練完成！完美作答，零錯誤！'
+                            : `🎉 訓練完成！本次累積錯誤：${sessionMistakes.value} 次`;
+                        alert(msg);
+                        reset();
+                    }
+                }, 500);
+            }
+        }
+
+        function reset() {
+            stopDrillTimer();
+            isStarted.value               = false;
+            sentences.value               = [];
+            userInput.value               = '';
+            currentContext.value          = null;
+            analysisResult.value          = null;
+            sessionMistakes.value         = 0;
+            typingMistakesThisDrill.value = 0;
+            drillLiveSec.value            = 0;
+            lastSentenceWpm.value         = null;
+            window.speechSynthesis.cancel();
+        }
+
+        /* ─── Stats ──────────────────────────────────────── */
+        function loadStats()  { const s = localStorage.getItem('fsi_user_model'); if (s) userStats.value = JSON.parse(s); }
+        function saveStats()  { localStorage.setItem('fsi_user_model', JSON.stringify(userStats.value)); }
+        function clearHistory() {
+            if (confirm('清除所有使用者資料（含錯誤紀錄）？')) { localStorage.clear(); location.reload(); }
+        }
+        function calculateErrorRate(type)  { const s = userStats.value[type]; return s.attempts > 0 ? Math.round(s.errors / s.attempts * 100) : 0; }
+        function getErrorRateColor(type)   { const r = calculateErrorRate(type); return r > 40 ? 'text-red-400' : r > 15 ? 'text-yellow-400' : 'text-green-400'; }
+        function getErrorRateBgColor(type) { const r = calculateErrorRate(type); return r > 40 ? 'bg-red-500/50' : r > 15 ? 'bg-yellow-500/50' : 'bg-green-500/50'; }
+
+        /* ─── Lifecycle ──────────────────────────────────── */
+        onMounted(() => {
+            window.addEventListener('keydown', handleKeyDown);
+            fetchModels();
+            loadStats();
+            loadErrorLog();
+        });
+
+        onUnmounted(() => {
+            window.removeEventListener('keydown', handleKeyDown);
+            if (freeInputTimer) clearInterval(freeInputTimer);
+            stopDrillTimer();
+        });
+
+        /* ─── Template bindings ──────────────────────────── */
+        return {
+            apiUrl, modelName, customModelName, availableModels, apiStatus, recommendations,
+            baseSentence, freeInputSentence, analysisResult, isStarted,
+            loadingError, loadingPattern, loadingRec,
+            sentences, currentIndex, userInput, currentContext,
+            currentSentence, currentTranslation,
+            currentLevel, levels, activeModel, userStats,
+            typingMistakesThisDrill, sessionMistakes,
+            // Timing
+            freeInputStartTs, liveInputSec, liveInputWpm,
+            drillLiveSec, lastSentenceWpm,
+            onFreeInputFocus, onFreeInputActivity,
+            // Error log
+            grammarErrorLog, showErrorLog, expandedId, errorSummary,
+            toggleExpand, clearErrorLog,
+            // Helpers
+            calculateErrorRate, getErrorRateColor, getErrorRateBgColor,
+            clearHistory, analyzeError, generatePatternDrills,
+            provider, switchProvider,
+            getCharClass, reset, fetchRecommendations, fetchModels
+        };
+    }
+}).mount('#app');
+</script>
+</body>
+</html>
+
